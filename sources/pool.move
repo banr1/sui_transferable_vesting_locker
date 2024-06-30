@@ -34,6 +34,8 @@ module transferable_vesting_contract::pool {
     /// Initializes the pool object with the balance.
     public fun initialize_pool(pool_cap: PoolCap, coin: &mut Coin<SUI>, amount: u64, ctx: &mut TxContext) {
         assert!(coin.value() > 0, EInsufficientBalance);
+        assert!(amount > 0, EInsufficientBalance);
+        assert!(amount <= coin.value(), EInsufficientBalance);
 
         let pool = Pool {
             id: object::new(ctx),
