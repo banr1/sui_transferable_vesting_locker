@@ -10,10 +10,12 @@ module transferable_vesting_locker::locker {
     const EStepOverflow: u64 = 0;
     // Thrown when the current time is less than the each step time
     const EInvalidTiming: u64 = 1;
+    // Thrown when the start time is invalid
+    const EInvalidStartTime: u64 = 2;
     // Thrown when the balance is insufficient
-    const EInsufficientBalance: u64 = 2;
+    const EInsufficientBalance: u64 = 3;
     // Thrown when the category is invalid
-    const EInvalidCategory: u64 = 3;
+    const EInvalidCategory: u64 = 4;
 
     // Locker cap struct
     public struct LockerCap has key {
@@ -76,6 +78,7 @@ module transferable_vesting_locker::locker {
     // Creates a new locker
     // Deposits and locks an existing coin for a specified duration
     public fun new<T>(
+        locker_cap: LockerCap,
         coin: &mut Coin<T>,
         registry: &CategoryRegistry,
         receiver: address,
@@ -84,13 +87,13 @@ module transferable_vesting_locker::locker {
         interval: u64,
         steps: u64,
         category: String,
+        clock_object: &Clock,
         ctx: &mut TxContext
     ) {
         let original_balance = amount_per_step * steps;
         assert!(original_balance <= coin.value(), EInsufficientBalance);
-
-        assert!(category.length() > 0, EInvalidCategory);
         assert!(registry.categories.contains(&category), EInvalidCategory);
+        assert!(clock::timestamp_ms(clock_object) <= start, EInvalidStartTime);
 
         transfer::share_object(Locker {
             id: object::new(ctx),
@@ -104,6 +107,7 @@ module transferable_vesting_locker::locker {
             current_step_count: 0,
             current_balance: coin.split(original_balance, ctx).into_balance()
         });
+        transfer::transfer(locker_cap, ctx.sender());
     }
 
     // Transfers the next step of the locked coin to the receiver
