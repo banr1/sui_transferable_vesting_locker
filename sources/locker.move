@@ -69,16 +69,15 @@ module transferable_vesting_locker::locker {
 
     // Registers a new category
     // This is called by the owner of the locker cap
-    public fun register_category(locker_cap: LockerCap, registry: &mut CategoryRegistry, name: String, ctx: &mut TxContext) {
+    public fun register_category(_: &LockerCap, registry: &mut CategoryRegistry, name: String) {
         assert!(name.length() > 0, EInvalidCategory);
         registry.categories.insert(name);
-        transfer::transfer(locker_cap, ctx.sender());
     }
 
     // Creates a new locker
     // Deposits and locks an existing coin for a specified duration
     public fun new<T>(
-        locker_cap: LockerCap,
+        _: &LockerCap,
         coin: &mut Coin<T>,
         registry: &CategoryRegistry,
         receiver: address,
@@ -107,7 +106,6 @@ module transferable_vesting_locker::locker {
             current_step_count: 0,
             current_balance: coin.split(original_balance, ctx).into_balance()
         });
-        transfer::transfer(locker_cap, ctx.sender());
     }
 
     // Transfers the next step of the locked coin to the receiver
