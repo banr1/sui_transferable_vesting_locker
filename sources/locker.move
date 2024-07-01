@@ -13,7 +13,7 @@ module transferable_vesting_locker::locker {
     // Thrown when the start time is invalid
     const EInvalidStartTime: u64 = 2;
     // Thrown when the balance is insufficient
-    const EInsufficientBalance: u64 = 3;
+    const EInvalidBalance: u64 = 3;
     // Thrown when the category is invalid
     const EInvalidCategory: u64 = 4;
 
@@ -79,7 +79,7 @@ module transferable_vesting_locker::locker {
     // Deposits and locks an existing coin for a specified duration
     public fun new<T>(
         _: &LockerCap,
-        coin: &mut Coin<T>,
+        coin: Coin<T>,
         registry: &CategoryRegistry,
         receiver: address,
         amount_per_step: u64,
@@ -91,7 +91,7 @@ module transferable_vesting_locker::locker {
         ctx: &mut TxContext
     ) {
         let original_balance = amount_per_step * steps;
-        assert!(original_balance <= coin.value(), EInsufficientBalance);
+        assert!(original_balance == coin.value(), EInvalidBalance);
         assert!(registry.categories.contains(&category), EInvalidCategory);
         assert!(clock::timestamp_ms(clock_object) <= start, EInvalidStartTime);
 
@@ -105,7 +105,7 @@ module transferable_vesting_locker::locker {
             original_balance,
             category,
             current_step_count: 0,
-            current_balance: coin.split(original_balance, ctx).into_balance()
+            current_balance: coin.into_balance(),
         });
     }
 
