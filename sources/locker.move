@@ -3,6 +3,7 @@ module transferable_vesting_locker::locker {
     use sui::balance::{Balance};
     use sui::clock::{Self, Clock};
     use sui::coin::{Self, Coin};
+    use sui::vec_set::{Self, VecSet};
 
     // Error codes
     // Thrown when the current step count exceeds the total number of steps
@@ -50,7 +51,7 @@ module transferable_vesting_locker::locker {
     // Category registry struct
     public struct CategoryRegistry has key {
         id: UID,
-        categories: vector<Category>,
+        categories: VecSet<Category>,
     }
 
     // Category struct
@@ -58,19 +59,22 @@ module transferable_vesting_locker::locker {
         name: String,
     }
 
+    // Initializes the locker
     fun init(ctx: &mut TxContext) {
         let locker_cap = LockerCap { id: object::new(ctx) };
         let registry = CategoryRegistry {
             id: object::new(ctx),
-            categories: vector::empty(),
+            categories: vec_set::empty(),
         };
         transfer::share_object(registry);
         transfer::transfer(locker_cap, ctx.sender());
     }
 
+    // Registers a new category
+    // This is called by the owner of the locker cap
     public fun register_category(locker_cap: LockerCap, registry: &mut CategoryRegistry, name: String, ctx: &mut TxContext) {
         assert!(name.length() > 0, EInvalidCategory);
-        vector::push_back(&mut registry.categories, Category { name });
+        registry.categories.insert(Category { name });
         transfer::transfer(locker_cap, ctx.sender());
     }
 
