@@ -1,15 +1,23 @@
 module transferable_vesting_locker::locker {
-    use sui::coin::{Self, Coin};
+    use std::string::String;
     use sui::balance::{Balance};
     use sui::clock::{Self, Clock};
+    use sui::coin::{Self, Coin};
 
     // Error codes
-    // Thrown if the airdrop creator tries to create an airdrop with more than the maximum number of steps.
+    // Thrown when the current step count exceeds the total number of steps
     const EStepOverflow: u64 = 0;
-    // Thrown if the airdrop creator tries create an airdrop in the past.
-    const EInvalidStart: u64 = 1;
-    // Thrown if the airdrop creator tries to create an airdrop with more than the maximum number of steps.
+    // Thrown when the current time is less than the each step time
+    const EInvalidTiming: u64 = 1;
+    // Thrown when the balance is insufficient
     const EInsufficientBalance: u64 = 2;
+    // Thrown when the category is invalid
+    const EInvalidCategory: u64 = 3;
+
+    // Locker cap struct
+    public struct LockerCap has key {
+        id: UID,
+    }
 
     // Locker struct
     public struct Locker<phantom T> has key {
@@ -29,19 +37,48 @@ module transferable_vesting_locker::locker {
         // Original balance of the locker
         // This is the total amount of coin that will be transferred to the receiver
         original_balance: u64,
+        // Category of the locker
+        category: Category,
         // Current step count
         // This is the number of steps that have been transferred to the receiver
         current_step_count: u64,
         // Current balance of the locker
         // This is the remaining balance of the locker
-        current_balance: Balance<T>
+        current_balance: Balance<T>,
+    }
+
+    // Category registry struct
+    public struct CategoryRegistry has key {
+        id: UID,
+        categories: vector<Category>,
+    }
+
+    // Category struct
+    public struct Category has copy, drop, store {
+        name: String,
+    }
+
+    fun init(ctx: &mut TxContext) {
+        let locker_cap = LockerCap { id: object::new(ctx) };
+        let registry = CategoryRegistry {
+            id: object::new(ctx),
+            categories: vector::empty(),
+        };
+        transfer::share_object(registry);
+        transfer::transfer(locker_cap, ctx.sender());
+    }
+
+    public fun register_category(locker_cap: LockerCap, registry: &mut CategoryRegistry, name: String, ctx: &mut TxContext) {
+        assert!(name.length() > 0, EInvalidCategory);
+        vector::push_back(&mut registry.categories, Category { name });
+        transfer::transfer(locker_cap, ctx.sender());
     }
 
     // Transfers the next step of the locked coin to the receiver
     // The transfer is only allowed if the current time is greater than or equal to the start time of the locker
     // and the current step count is less than the total number of steps
     public fun transfer<T>(locker: &mut Locker<T>, clock_object: &Clock, ctx: &mut TxContext) {
-        assert!(locker.start + locker.current_step_count * locker.interval <= clock::timestamp_ms(clock_object), EInvalidStart);
+        assert!(locker.start + locker.current_step_count * locker.interval <= clock::timestamp_ms(clock_object), EInvalidTiming);
         locker.current_step_count = locker.current_step_count + 1;
         assert!(locker.current_step_count <= locker.step, EStepOverflow);
         transfer::public_transfer(coin::take(&mut locker.current_balance, locker.amount_per_step, ctx), locker.receiver)
@@ -49,9 +86,23 @@ module transferable_vesting_locker::locker {
 
     // Creates a new locker
     // Deposits and locks an existing coin for a specified duration
-    public fun new<T>(coin: &mut Coin<T>, receiver: address, amount_per_step: u64, start: u64, interval: u64, step: u64, ctx: &mut TxContext) {
+    public fun new<T>(
+        coin: &mut Coin<T>,
+        registry: &CategoryRegistry,
+        receiver: address,
+        amount_per_step: u64,
+        start: u64,
+        interval: u64,
+        step: u64,
+        category: String,
+        ctx: &mut TxContext
+    ) {
         let original_balance = amount_per_step * step;
         assert!(original_balance <= coin.value(), EInsufficientBalance);
+
+        assert!(category.length() > 0, EInvalidCategory);
+        let category_object = Category { name: category };
+        assert!(registry.categories.contains(&category_object), EInvalidCategory);
 
         transfer::share_object(Locker {
             id: object::new(ctx),
@@ -61,6 +112,7 @@ module transferable_vesting_locker::locker {
             step,
             amount_per_step,
             original_balance,
+            category: category_object,
             current_step_count: 0,
             current_balance: coin.split(original_balance, ctx).into_balance()
         });
