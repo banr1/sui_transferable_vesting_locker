@@ -71,6 +71,7 @@ module transferable_vesting_locker::locker {
     // This is called by the owner of the locker cap
     public fun register_category(_: &LockerCap, registry: &mut CategoryRegistry, name: String) {
         assert!(name.length() > 0, EInvalidCategory);
+        assert!(registry.categories.contains(&name), EInvalidCategory);
         registry.categories.insert(name);
     }
 
