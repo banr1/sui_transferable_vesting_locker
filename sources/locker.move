@@ -10,14 +10,22 @@ module transferable_vesting_locker::locker {
     const EStepOverflow: u64 = 0;
     // Thrown when the current time is less than the each step time
     const EInvalidTiming: u64 = 1;
+    // Thrown when the start time is invalid
+    const EInvalidStartTime: u64 = 2;
     // Thrown when the balance is insufficient
-    const EInsufficientBalance: u64 = 2;
+    const EInvalidBalance: u64 = 3;
     // Thrown when the category is invalid
-    const EInvalidCategory: u64 = 3;
+    const EInvalidCategory: u64 = 4;
 
     // Locker cap struct
     public struct LockerCap has key {
         id: UID,
+    }
+
+    // Category registry struct
+    public struct CategoryRegistry has key {
+        id: UID,
+        categories: VecSet<String>,
     }
 
     // Locker struct
@@ -32,31 +40,20 @@ module transferable_vesting_locker::locker {
         // e.g. 60 * 60 * 24 * 1000 (1 day)
         interval: u64,
         // Total number of steps
-        step: u64,
+        steps: u64,
         // Amount of coin to transfer per step
         amount_per_step: u64,
         // Original balance of the locker
         // This is the total amount of coin that will be transferred to the receiver
         original_balance: u64,
         // Category of the locker
-        category: Category,
+        category: String,
         // Current step count
         // This is the number of steps that have been transferred to the receiver
-        current_step_count: u64,
+        current_steps_count: u64,
         // Current balance of the locker
         // This is the remaining balance of the locker
         current_balance: Balance<T>,
-    }
-
-    // Category registry struct
-    public struct CategoryRegistry has key {
-        id: UID,
-        categories: VecSet<Category>,
-    }
-
-    // Category struct
-    public struct Category has copy, drop, store {
-        name: String,
     }
 
     // Initializes the locker
@@ -72,53 +69,54 @@ module transferable_vesting_locker::locker {
 
     // Registers a new category
     // This is called by the owner of the locker cap
-    public fun register_category(locker_cap: LockerCap, registry: &mut CategoryRegistry, name: String, ctx: &mut TxContext) {
+    public fun register_category(_: &LockerCap, registry: &mut CategoryRegistry, name: String) {
         assert!(name.length() > 0, EInvalidCategory);
-        registry.categories.insert(Category { name });
-        transfer::transfer(locker_cap, ctx.sender());
-    }
-
-    // Transfers the next step of the locked coin to the receiver
-    // The transfer is only allowed if the current time is greater than or equal to the start time of the locker
-    // and the current step count is less than the total number of steps
-    public fun transfer<T>(locker: &mut Locker<T>, clock_object: &Clock, ctx: &mut TxContext) {
-        assert!(locker.start + locker.current_step_count * locker.interval <= clock::timestamp_ms(clock_object), EInvalidTiming);
-        locker.current_step_count = locker.current_step_count + 1;
-        assert!(locker.current_step_count <= locker.step, EStepOverflow);
-        transfer::public_transfer(coin::take(&mut locker.current_balance, locker.amount_per_step, ctx), locker.receiver)
+        assert!(!registry.categories.contains(&name), EInvalidCategory);
+        registry.categories.insert(name);
     }
 
     // Creates a new locker
     // Deposits and locks an existing coin for a specified duration
     public fun new<T>(
-        coin: &mut Coin<T>,
+        _: &LockerCap,
+        coin: Coin<T>,
         registry: &CategoryRegistry,
         receiver: address,
         amount_per_step: u64,
         start: u64,
         interval: u64,
-        step: u64,
+        steps: u64,
         category: String,
+        clock_object: &Clock,
         ctx: &mut TxContext
     ) {
-        let original_balance = amount_per_step * step;
-        assert!(original_balance <= coin.value(), EInsufficientBalance);
-
-        assert!(category.length() > 0, EInvalidCategory);
-        let category_object = Category { name: category };
-        assert!(registry.categories.contains(&category_object), EInvalidCategory);
+        let original_balance = amount_per_step * steps;
+        assert!(original_balance == coin.value(), EInvalidBalance);
+        assert!(registry.categories.contains(&category), EInvalidCategory);
+        assert!(clock::timestamp_ms(clock_object) <= start, EInvalidStartTime);
 
         transfer::share_object(Locker {
             id: object::new(ctx),
             receiver,
             start,
             interval,
-            step,
+            steps,
             amount_per_step,
             original_balance,
-            category: category_object,
-            current_step_count: 0,
-            current_balance: coin.split(original_balance, ctx).into_balance()
+            category,
+            current_steps_count: 0,
+            current_balance: coin.into_balance(),
         });
+    }
+
+    // Transfers the next step of the locked coin to the receiver
+    // The transfer is only allowed if the current time is greater than or equal to the start time of the locker
+    // and the current step count is less than the total number of steps
+    public fun transfer<T>(locker: &mut Locker<T>, clock_object: &Clock, ctx: &mut TxContext) {
+        assert!(locker.start + locker.current_steps_count * locker.interval <= clock::timestamp_ms(clock_object), EInvalidTiming);
+        locker.current_steps_count = locker.current_steps_count + 1;
+        assert!(locker.current_steps_count <= locker.steps, EStepOverflow);
+
+        transfer::public_transfer(coin::take(&mut locker.current_balance, locker.amount_per_step, ctx), locker.receiver)
     }
 }
