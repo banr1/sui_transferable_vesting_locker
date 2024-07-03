@@ -12,7 +12,7 @@ module transferable_vesting_locker::locker {
     const EInvalidTiming: u64 = 1;
     // Thrown when the start time is invalid
     const EInvalidStartTime: u64 = 2;
-    // Thrown when the balance is insufficient
+    // Thrown when the balance is invalid
     const EInvalidBalance: u64 = 3;
     // Thrown when the category is invalid
     const EInvalidCategory: u64 = 4;
