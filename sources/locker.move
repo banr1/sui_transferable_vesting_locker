@@ -17,18 +17,18 @@ module transferable_vesting_locker::locker {
     // Thrown when the category is invalid
     const EInvalidCategory: u64 = 4;
 
-    // Locker cap struct
+    // Struct representing the capability to manage lockers
     public struct LockerCap has key {
         id: UID,
     }
 
-    // Category registry struct
+    // Struct for storing and managing categories
     public struct CategoryRegistry has key {
         id: UID,
         categories: VecSet<String>,
     }
 
-    // Locker struct
+    // Main struct representing a vesting locker
     public struct Locker<phantom T> has key {
         // Unique identifier of the locker
         id: UID,
@@ -56,27 +56,30 @@ module transferable_vesting_locker::locker {
         current_balance: Balance<T>,
     }
 
-    // Initializes the locker
+    // Initialize the module
     fun init(ctx: &mut TxContext) {
+        // Create LockerCap 
         let locker_cap = LockerCap { id: object::new(ctx) };
+
+        // Create and share CategoryRegistry
         let registry = CategoryRegistry {
             id: object::new(ctx),
             categories: vec_set::empty(),
         };
         transfer::share_object(registry);
+
+        // Send the LockerCap to the sender
         transfer::transfer(locker_cap, ctx.sender());
     }
 
-    // Registers a new category
-    // This is called by the owner of the locker cap
+    // Register a new category (only callable by LockerCap owner)
     public fun register_category(_: &LockerCap, registry: &mut CategoryRegistry, name: String) {
         assert!(name.length() > 0, EInvalidCategory);
         assert!(!registry.categories.contains(&name), EInvalidCategory);
         registry.categories.insert(name);
     }
 
-    // Creates a new locker
-    // Deposits and locks an existing coin for a specified duration
+    // Create a new locker (only callable by LockerCap owner)
     public fun new<T>(
         _: &LockerCap,
         coin: Coin<T>,
@@ -90,11 +93,13 @@ module transferable_vesting_locker::locker {
         clock_object: &Clock,
         ctx: &mut TxContext
     ) {
+        // Validate inputs
         let original_balance = amount_per_step * steps;
         assert!(original_balance == coin.value(), EInvalidBalance);
         assert!(registry.categories.contains(&category), EInvalidCategory);
         assert!(clock::timestamp_ms(clock_object) <= start, EInvalidStartTime);
 
+        // Create and share the Locker object
         transfer::share_object(Locker {
             id: object::new(ctx),
             receiver,
@@ -109,14 +114,16 @@ module transferable_vesting_locker::locker {
         });
     }
 
-    // Transfers the next step of the locked coin to the receiver
-    // The transfer is only allowed if the current time is greater than or equal to the start time of the locker
-    // and the current step count is less than the total number of steps
+    // Transfer the next vested amount to the receiver
     public fun transfer<T>(locker: &mut Locker<T>, clock_object: &Clock, ctx: &mut TxContext) {
+        // Check if it's time for the next transfer
         assert!(locker.start + locker.current_steps_count * locker.interval <= clock::timestamp_ms(clock_object), EInvalidTiming);
+        
+        // Increment the step count
         locker.current_steps_count = locker.current_steps_count + 1;
         assert!(locker.current_steps_count <= locker.steps, EStepOverflow);
 
+        // Transfer the vested amount to the receiver
         transfer::public_transfer(coin::take(&mut locker.current_balance, locker.amount_per_step, ctx), locker.receiver)
     }
 }
